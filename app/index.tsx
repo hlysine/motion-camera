@@ -1,7 +1,6 @@
-import { Slider } from '@expo/ui/jetpack-compose';
-import { Skia } from '@shopify/react-native-skia';
-import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Skia, SkImageFilter } from '@shopify/react-native-skia';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text } from 'react-native';
 import {
   Camera,
   NativeBuffer,
@@ -10,14 +9,19 @@ import {
   useSkiaFrameProcessor,
 } from 'react-native-vision-camera';
 
+const MAX_FRAME_COUNT = 5;
+const shaderInputNames = ['image', 'frame0', 'frame1', 'frame2', 'frame3', 'frame4'];
+
 declare global {
-  var previousFrameData: NativeBuffer | null;
+  var frameQueue: NativeBuffer[];
 }
 
 export default function Index() {
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
-  const [sensitivity, setSensitivity] = React.useState(0);
+  const [attenuation, setAttenuation] = useState(0.5);
+  const [amplification, setAmplification] = useState(16);
+  const [frameCount, setFrameCount] = useState(MAX_FRAME_COUNT);
 
   useEffect(() => {
     if (!hasPermission) {
@@ -25,30 +29,82 @@ export default function Index() {
     }
   }, [hasPermission, requestPermission]);
 
+  const motionAmpShaderProgram = useMemo(() => {
+    return Skia.RuntimeEffect.Make(`
+      uniform float attenuation;
+      uniform float amplification;
+      uniform int frameCount;
+      uniform shader frame0;
+      uniform shader frame1;
+      uniform shader frame2;
+      uniform shader frame3;
+      uniform shader frame4;
+      uniform shader image;
+
+      vec4 main(vec2 fragCoord) {
+        vec4 finalColor = vec4(0.0);
+        vec4 currentColor = image.eval(fragCoord);
+        vec4 prevColor = frame0.eval(fragCoord) / float(frameCount);
+        if (frameCount > 1) {
+          prevColor += frame1.eval(fragCoord) / float(frameCount);
+        }
+        if (frameCount > 2) {
+          prevColor += frame2.eval(fragCoord) / float(frameCount);
+        }
+        if (frameCount > 3) {
+          prevColor += frame3.eval(fragCoord) / float(frameCount);
+        }
+        if (frameCount > 4) {
+          prevColor += frame4.eval(fragCoord) / float(frameCount);
+        }
+        finalColor = currentColor * attenuation + (currentColor - prevColor) * amplification;
+        return finalColor;
+      }
+    `);
+  }, []);
+
+  const motionAmpShader = useMemo(() => {
+    const builder = Skia.RuntimeShaderBuilder(motionAmpShaderProgram!);
+    builder.setUniform('attenuation', [attenuation]);
+    builder.setUniform('amplification', [amplification]);
+    builder.setUniform('frameCount', [frameCount]);
+    return builder;
+  }, [motionAmpShaderProgram, attenuation, amplification, frameCount]);
+
   const frameProcessor = useSkiaFrameProcessor(
     frame => {
       'worklet';
-      if (!global.previousFrameData) {
-        global.previousFrameData = null;
+
+      if (!global.frameQueue) {
+        global.frameQueue = [];
       }
+
+      const inputs: (SkImageFilter | null)[] = global.frameQueue.map(frame =>
+        Skia.ImageFilter.MakeImage(Skia.Image.MakeImageFromNativeBuffer(frame.pointer))
+      );
+      while (inputs.length < frameCount) {
+        inputs.push(null);
+      }
+      inputs.unshift(null);
+      const imageFilter = Skia.ImageFilter.MakeRuntimeShaderWithChildren(motionAmpShader, 0, shaderInputNames, inputs);
       const paint = Skia.Paint();
-      if (global.previousFrameData) {
-        const previousFrame = Skia.Image.MakeImageFromNativeBuffer(global.previousFrameData.pointer);
-        const previousFrameFilter = Skia.ImageFilter.MakeImage(previousFrame);
-        const imageFilter = Skia.ImageFilter.MakeArithmetic(
-          0,
-          -Math.pow(10, sensitivity),
-          Math.pow(10, sensitivity),
-          0,
-          false,
-          previousFrameFilter
-        );
-        paint.setImageFilter(imageFilter);
-      }
+      paint.setImageFilter(imageFilter);
       frame.render(paint);
-      global.previousFrameData = frame.getNativeBuffer();
+      inputs.forEach(input => {
+        if (input) {
+          input.dispose?.();
+        }
+      });
+
+      global.frameQueue.push(frame.getNativeBuffer());
+      if (global.frameQueue.length > frameCount) {
+        const removedFrames = global.frameQueue.splice(0, global.frameQueue.length - frameCount);
+        removedFrames.forEach(frame => {
+          frame.delete();
+        });
+      }
     },
-    [sensitivity]
+    [frameCount, motionAmpShader]
   );
 
   if (!hasPermission) return <Text>No permission to use camera</Text>;
@@ -56,7 +112,7 @@ export default function Index() {
   return (
     <>
       <Camera style={styles.absoluteFill} device={device} frameProcessor={frameProcessor} isActive={true} />
-      <View style={styles.absoluteBottom}>
+      {/* <View style={styles.absoluteBottom}>
         <Text style={styles.text}>Sensitivity: {sensitivity.toFixed(2)}</Text>
         <Slider
           style={styles.slider}
@@ -68,7 +124,7 @@ export default function Index() {
             setSensitivity(value);
           }}
         />
-      </View>
+      </View> */}
     </>
   );
 }
