@@ -23,7 +23,7 @@ declare global {
 export default function Index() {
   const [attenuation, setAttenuation] = useState(0.5);
   const [amplification, setAmplification] = useState(4);
-  const [position, setPosition] = useState<CameraPosition>('front');
+  const [position, setPosition] = useState<CameraPosition>('back');
   const device = useCameraDevice(position);
   const { hasPermission, requestPermission } = useCameraPermission();
 
