@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native-vision-camera/src/skia/useSkiaFrameProcessor.ts b/node_modules/react-native-vision-camera/src/skia/useSkiaFrameProcessor.ts
+index 62e27d3..e143848 100644
+--- a/node_modules/react-native-vision-camera/src/skia/useSkiaFrameProcessor.ts
++++ b/node_modules/react-native-vision-camera/src/skia/useSkiaFrameProcessor.ts
+@@ -1,13 +1,13 @@
+-import type { Frame, FrameInternal } from '../types/Frame'
++import type { SkCanvas, SkImage, SkPaint, SkSurface } from '@shopify/react-native-skia'
+ import type { DependencyList } from 'react'
+ import { useEffect, useMemo } from 'react'
+-import type { DrawableFrameProcessor } from '../types/CameraProps'
+ import type { ISharedValue, IWorkletNativeApi } from 'react-native-worklets-core'
+-import type { SkCanvas, SkPaint, SkImage, SkSurface } from '@shopify/react-native-skia'
+-import { WorkletsProxy } from '../dependencies/WorkletsProxy'
+ import { SkiaProxy } from '../dependencies/SkiaProxy'
+-import { withFrameRefCounting } from '../frame-processors/withFrameRefCounting'
++import { WorkletsProxy } from '../dependencies/WorkletsProxy'
+ import { VisionCameraProxy } from '../frame-processors/VisionCameraProxy'
++import { withFrameRefCounting } from '../frame-processors/withFrameRefCounting'
++import type { DrawableFrameProcessor } from '../types/CameraProps'
++import type { Frame, FrameInternal } from '../types/Frame'
+ import type { Orientation } from '../types/Orientation'
+ 
+ /**
+@@ -96,7 +96,8 @@ function withRotatedFrame(frame: Frame, canvas: SkCanvas, previewOrientation: Or
+       case 'landscape-left':
+         // rotate two flips on (0,0) origin and move X + Y into view again
+         canvas.translate(frame.height, frame.width)
+-        canvas.rotate(270, 0, 0)
++        canvas.rotate(90, 0, 0)
++        canvas.scale(-1, 1)
+         break
+       case 'portrait-upside-down':
+         // rotate three flips on (0,0) origin and move Y into view again

@@ -1,8 +1,12 @@
+import { Button, Slider } from '@expo/ui/jetpack-compose';
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Skia, SkImageFilter } from '@shopify/react-native-skia';
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   Camera,
+  CameraPosition,
   NativeBuffer,
   useCameraDevice,
   useCameraPermission,
@@ -17,11 +21,11 @@ declare global {
 }
 
 export default function Index() {
-  const device = useCameraDevice('back');
-  const { hasPermission, requestPermission } = useCameraPermission();
   const [attenuation, setAttenuation] = useState(0.5);
-  const [amplification, setAmplification] = useState(16);
-  const [frameCount, setFrameCount] = useState(MAX_FRAME_COUNT);
+  const [amplification, setAmplification] = useState(4);
+  const [position, setPosition] = useState<CameraPosition>('front');
+  const device = useCameraDevice(position);
+  const { hasPermission, requestPermission } = useCameraPermission();
 
   useEffect(() => {
     if (!hasPermission) {
@@ -59,11 +63,11 @@ export default function Index() {
 
   const motionAmpShader = useMemo(() => {
     const builder = Skia.RuntimeShaderBuilder(motionAmpShaderProgram!);
-    builder.setUniform('attenuation', [attenuation]);
-    builder.setUniform('amplification', [amplification]);
-    builder.setUniform('frameCount', [frameCount]);
+    builder.setUniform('attenuation', [1 - attenuation]);
+    builder.setUniform('amplification', [Math.pow(2, amplification)]);
+    builder.setUniform('frameCount', [MAX_FRAME_COUNT]);
     return builder;
-  }, [motionAmpShaderProgram, attenuation, amplification, frameCount]);
+  }, [motionAmpShaderProgram, attenuation, amplification]);
 
   const frameProcessor = useSkiaFrameProcessor(
     frame => {
@@ -74,8 +78,8 @@ export default function Index() {
       }
 
       global.frameQueue.unshift(frame.getNativeBuffer());
-      if (global.frameQueue.length > frameCount) {
-        const removedFrames = global.frameQueue.splice(frameCount, global.frameQueue.length);
+      if (global.frameQueue.length > MAX_FRAME_COUNT) {
+        const removedFrames = global.frameQueue.splice(MAX_FRAME_COUNT, global.frameQueue.length);
         removedFrames.forEach(frame => {
           frame.delete();
         });
@@ -91,28 +95,61 @@ export default function Index() {
         input?.dispose?.();
       });
     },
-    [frameCount, motionAmpShader]
+    [motionAmpShader]
   );
+
+  const bottomSheetRef = useRef<BottomSheet>(null);
 
   if (!hasPermission) return <Text>No permission to use camera</Text>;
   if (device == null) return <Text>No back camera device found</Text>;
   return (
-    <>
+    <GestureHandlerRootView style={styles.absoluteFill}>
       <Camera style={styles.absoluteFill} device={device} frameProcessor={frameProcessor} isActive={true} />
-      {/* <View style={styles.absoluteBottom}>
-        <Text style={styles.text}>Sensitivity: {sensitivity.toFixed(2)}</Text>
-        <Slider
-          style={styles.slider}
-          value={sensitivity}
-          min={0}
-          max={2}
-          steps={0}
-          onValueChange={value => {
-            setSensitivity(value);
+      <View style={styles.absoluteBottom}>
+        <Button
+          style={styles.button}
+          onPress={() => {
+            setPosition(prev => (prev === 'back' ? 'front' : 'back'));
           }}
-        />
-      </View> */}
-    </>
+        >
+          {position}
+        </Button>
+        <Button
+          style={styles.button}
+          onPress={() => {
+            bottomSheetRef.current?.expand();
+          }}
+        >
+          Settings
+        </Button>
+      </View>
+      <BottomSheet enablePanDownToClose ref={bottomSheetRef} enableContentPanningGesture={false}>
+        <BottomSheetView style={styles.contentContainer}>
+          <Text style={styles.text}>Background attenuation: {attenuation.toFixed(2)}</Text>
+          <Slider
+            style={styles.slider}
+            value={attenuation}
+            min={0}
+            max={1}
+            steps={0}
+            onValueChange={value => {
+              setAttenuation(value);
+            }}
+          />
+          <Text style={styles.text}>Motion amplification: {amplification.toFixed(2)}</Text>
+          <Slider
+            style={styles.slider}
+            value={amplification}
+            min={0}
+            max={8}
+            steps={0}
+            onValueChange={value => {
+              setAmplification(value);
+            }}
+          />
+        </BottomSheetView>
+      </BottomSheet>
+    </GestureHandlerRootView>
   );
 }
 
@@ -124,23 +161,35 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  absoluteBottom: {
-    position: 'absolute',
+  contentContainer: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    bottom: 16,
-    left: 16,
-    right: 16,
     gap: 16,
+    padding: 16,
+  },
+  absoluteBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    gap: 16,
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignContent: 'stretch',
+  },
+  button: {
+    width: '40%',
+    textTransform: 'capitalize',
   },
   slider: {
     padding: 16,
     alignSelf: 'stretch',
   },
   text: {
-    color: 'white',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    color: 'black',
     fontSize: 16,
     textAlign: 'center',
     width: 'auto',
