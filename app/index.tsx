@@ -9,8 +9,8 @@ import {
   useSkiaFrameProcessor,
 } from 'react-native-vision-camera';
 
-const MAX_FRAME_COUNT = 5;
-const shaderInputNames = ['image', 'frame0', 'frame1', 'frame2', 'frame3', 'frame4'];
+const MAX_FRAME_COUNT = 6;
+const shaderInputNames = Array.from({ length: MAX_FRAME_COUNT }, (_, i) => `frame${i}`);
 
 declare global {
   var frameQueue: NativeBuffer[];
@@ -33,32 +33,26 @@ export default function Index() {
     return Skia.RuntimeEffect.Make(`
       uniform float attenuation;
       uniform float amplification;
-      uniform int frameCount;
-      uniform shader frame0;
-      uniform shader frame1;
-      uniform shader frame2;
-      uniform shader frame3;
-      uniform shader frame4;
-      uniform shader image;
+      uniform float frameCount;
+      ${shaderInputNames
+        .map(name => `      uniform shader ${name};`)
+        .join('\n')
+        .trim()}
 
       vec4 main(vec2 fragCoord) {
-        vec4 finalColor = vec4(0.0);
-        vec4 currentColor = image.eval(fragCoord);
-        vec4 prevColor = frame0.eval(fragCoord) / float(frameCount);
-        if (frameCount > 1) {
-          prevColor += frame1.eval(fragCoord) / float(frameCount);
+        vec4 currentColor = frame0.eval(fragCoord);
+        vec3 prevColor = frame1.eval(fragCoord).rgb / (frameCount - 1);
+        ${Array.from(
+          { length: MAX_FRAME_COUNT - 2 },
+          (_, i) => `
+        if (frameCount > ${i + 2}) {
+          prevColor += frame${i + 2}.eval(fragCoord).rgb / (frameCount - 1);
         }
-        if (frameCount > 2) {
-          prevColor += frame2.eval(fragCoord) / float(frameCount);
-        }
-        if (frameCount > 3) {
-          prevColor += frame3.eval(fragCoord) / float(frameCount);
-        }
-        if (frameCount > 4) {
-          prevColor += frame4.eval(fragCoord) / float(frameCount);
-        }
-        finalColor = currentColor * attenuation + (currentColor - prevColor) * amplification;
-        return finalColor;
+        `
+        )
+          .join('\n')
+          .trim()}
+        return vec4(currentColor.rgb * attenuation + (currentColor.rgb - prevColor) * amplification, currentColor.a);
       }
     `);
   }, []);
@@ -79,30 +73,23 @@ export default function Index() {
         global.frameQueue = [];
       }
 
+      global.frameQueue.unshift(frame.getNativeBuffer());
+      if (global.frameQueue.length > frameCount) {
+        const removedFrames = global.frameQueue.splice(frameCount, global.frameQueue.length);
+        removedFrames.forEach(frame => {
+          frame.delete();
+        });
+      }
       const inputs: (SkImageFilter | null)[] = global.frameQueue.map(frame =>
         Skia.ImageFilter.MakeImage(Skia.Image.MakeImageFromNativeBuffer(frame.pointer))
       );
-      while (inputs.length < frameCount) {
-        inputs.push(null);
-      }
-      inputs.unshift(null);
       const imageFilter = Skia.ImageFilter.MakeRuntimeShaderWithChildren(motionAmpShader, 0, shaderInputNames, inputs);
       const paint = Skia.Paint();
       paint.setImageFilter(imageFilter);
       frame.render(paint);
       inputs.forEach(input => {
-        if (input) {
-          input.dispose?.();
-        }
+        input?.dispose?.();
       });
-
-      global.frameQueue.push(frame.getNativeBuffer());
-      if (global.frameQueue.length > frameCount) {
-        const removedFrames = global.frameQueue.splice(0, global.frameQueue.length - frameCount);
-        removedFrames.forEach(frame => {
-          frame.delete();
-        });
-      }
     },
     [frameCount, motionAmpShader]
   );
