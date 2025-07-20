@@ -1,22 +1,15 @@
 import { Button, Slider } from '@expo/ui/jetpack-compose';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Skia, SkImageFilter } from '@shopify/react-native-skia';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Reanimated, {
-  Extrapolation,
-  interpolate,
-  runOnJS,
-  useAnimatedProps,
-  useSharedValue,
-} from 'react-native-reanimated';
+import Reanimated, { Extrapolation, interpolate, useAnimatedProps, useSharedValue } from 'react-native-reanimated';
 import {
   Camera,
   CameraPosition,
   CameraProps,
   NativeBuffer,
-  Point,
   useCameraDevice,
   useCameraPermission,
   useSkiaFrameProcessor,
@@ -116,17 +109,6 @@ export default function Index() {
 
   const bottomSheetRef = useRef<BottomSheet>(null);
 
-  const focus = useCallback((point: Point) => {
-    const c = camera.current;
-    if (c == null) return;
-    c.focus(point);
-    console.log(`Focusing at: ${point.x}, ${point.y}`);
-  }, []);
-
-  const tapGesture = Gesture.Tap().onEnd(({ x, y }) => {
-    runOnJS(focus)({ x, y });
-  });
-
   const zoomOffset = useSharedValue(0);
   const pinchGesture = Gesture.Pinch()
     .onBegin(() => {
@@ -144,16 +126,14 @@ export default function Index() {
   return (
     <GestureHandlerRootView style={styles.absoluteFill}>
       <GestureDetector gesture={pinchGesture}>
-        <GestureDetector gesture={tapGesture}>
-          <ReanimatedCamera
-            ref={camera}
-            style={styles.absoluteFill}
-            device={device}
-            frameProcessor={frameProcessor}
-            isActive={true}
-            animatedProps={animatedProps}
-          />
-        </GestureDetector>
+        <ReanimatedCamera
+          ref={camera}
+          style={styles.absoluteFill}
+          device={device}
+          frameProcessor={frameProcessor}
+          isActive={true}
+          animatedProps={animatedProps}
+        />
       </GestureDetector>
       <View style={styles.absoluteBottom}>
         <View style={styles.horizontalFlex}>
