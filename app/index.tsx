@@ -1,13 +1,22 @@
 import { Button, Slider } from '@expo/ui/jetpack-compose';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Skia, SkImageFilter } from '@shopify/react-native-skia';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Reanimated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedProps,
+  useSharedValue,
+} from 'react-native-reanimated';
 import {
   Camera,
   CameraPosition,
+  CameraProps,
   NativeBuffer,
+  Point,
   useCameraDevice,
   useCameraPermission,
   useSkiaFrameProcessor,
@@ -20,12 +29,19 @@ declare global {
   var frameQueue: NativeBuffer[];
 }
 
+Reanimated.addWhitelistedNativeProps({
+  zoom: true,
+});
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
+
 export default function Index() {
   const [attenuation, setAttenuation] = useState(0.5);
   const [amplification, setAmplification] = useState(4);
   const [position, setPosition] = useState<CameraPosition>('back');
   const device = useCameraDevice(position);
   const { hasPermission, requestPermission } = useCameraPermission();
+  const camera = useRef<Camera>(null);
+  const zoom = useSharedValue(device?.neutralZoom ?? 1);
 
   useEffect(() => {
     if (!hasPermission) {
@@ -100,28 +116,72 @@ export default function Index() {
 
   const bottomSheetRef = useRef<BottomSheet>(null);
 
+  const focus = useCallback((point: Point) => {
+    const c = camera.current;
+    if (c == null) return;
+    c.focus(point);
+    console.log(`Focusing at: ${point.x}, ${point.y}`);
+  }, []);
+
+  const tapGesture = Gesture.Tap().onEnd(({ x, y }) => {
+    runOnJS(focus)({ x, y });
+  });
+
+  const zoomOffset = useSharedValue(0);
+  const pinchGesture = Gesture.Pinch()
+    .onBegin(() => {
+      zoomOffset.value = zoom.value;
+    })
+    .onUpdate(event => {
+      const z = zoomOffset.value * event.scale;
+      zoom.value = interpolate(z, [1, 10], [device?.minZoom ?? 1, device?.maxZoom ?? 1], Extrapolation.CLAMP);
+    });
+
+  const animatedProps = useAnimatedProps<CameraProps>(() => ({ zoom: zoom.value }), [zoom]);
+
   if (!hasPermission) return <Text>No permission to use camera</Text>;
-  if (device == null) return <Text>No back camera device found</Text>;
+  if (device == null) return <Text>No camera device found</Text>;
   return (
     <GestureHandlerRootView style={styles.absoluteFill}>
-      <Camera style={styles.absoluteFill} device={device} frameProcessor={frameProcessor} isActive={true} />
+      <GestureDetector gesture={pinchGesture}>
+        <GestureDetector gesture={tapGesture}>
+          <ReanimatedCamera
+            ref={camera}
+            style={styles.absoluteFill}
+            device={device}
+            frameProcessor={frameProcessor}
+            isActive={true}
+            animatedProps={animatedProps}
+          />
+        </GestureDetector>
+      </GestureDetector>
       <View style={styles.absoluteBottom}>
-        <Button
-          style={styles.button}
-          onPress={() => {
-            setPosition(prev => (prev === 'back' ? 'front' : 'back'));
-          }}
-        >
-          {position === 'back' ? 'Back camera' : 'Front camera'}
-        </Button>
-        <Button
-          style={styles.button}
-          onPress={() => {
-            bottomSheetRef.current?.expand();
-          }}
-        >
-          Settings
-        </Button>
+        <View style={styles.horizontalFlex}>
+          <Button
+            style={styles.button}
+            onPress={() => {
+              setPosition(prev => (prev === 'back' ? 'front' : 'back'));
+            }}
+          >
+            {position === 'back' ? 'Back' : 'Front'}
+          </Button>
+          <Button
+            style={styles.button}
+            onPress={() => {
+              zoom.value = device?.neutralZoom ?? 1;
+            }}
+          >
+            Reset zoom
+          </Button>
+          <Button
+            style={styles.button}
+            onPress={() => {
+              bottomSheetRef.current?.expand();
+            }}
+          >
+            Settings
+          </Button>
+        </View>
       </View>
       <BottomSheet enablePanDownToClose ref={bottomSheetRef} enableContentPanningGesture={false}>
         <BottomSheetView style={styles.contentContainer}>
@@ -176,12 +236,19 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
     display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignContent: 'stretch',
+  },
+  horizontalFlex: {
+    gap: 8,
+    display: 'flex',
     flexDirection: 'row',
     justifyContent: 'center',
     alignContent: 'stretch',
   },
   button: {
-    width: '40%',
+    width: '34%',
   },
   slider: {
     padding: 16,
