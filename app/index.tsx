@@ -112,7 +112,7 @@ export default function Index() {
             setPosition(prev => (prev === 'back' ? 'front' : 'back'));
           }}
         >
-          {position}
+          {position === 'back' ? 'Back camera' : 'Front camera'}
         </Button>
         <Button
           style={styles.button}
@@ -182,7 +182,6 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '40%',
-    textTransform: 'capitalize',
   },
   slider: {
     padding: 16,
